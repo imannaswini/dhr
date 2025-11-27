@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { ArrowLeft } from 'lucide-react';
+import api from '@/lib/api'; 
+import { useAuth } from '@/context/AuthContext'; 
 
 interface LoginFormProps {
   role: 'gov' | 'hospital' | 'worker';
@@ -11,12 +13,14 @@ interface LoginFormProps {
 }
 
 export default function LoginForm({ role, onBack, onLoginSuccess }: LoginFormProps) {
-  const [formData, setFormData] = useState({});
+  // Record<string, string> fixes the 'any' type error while keeping the form dynamic
+  const [formData, setFormData] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { login } = useAuth(); // Updates Navbar immediately
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,19 +28,49 @@ export default function LoginForm({ role, onBack, onLoginSuccess }: LoginFormPro
     setIsSubmitting(true);
     toast.loading('Logging in...');
     
-    // Simulate API call for login verification
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    console.log("Login attempt for role:", role, "with data:", formData);
-    toast.dismiss();
-    toast.success('Login successful! Redirecting...');
-    
-    let redirectUrl = '/';
-    if (role === 'gov') redirectUrl = '/gov';
-    if (role === 'hospital') redirectUrl = '/hospital';
-    if (role === 'worker') redirectUrl = '/worker';
+    try {
+      const response = await api.post('/auth/login', {
+        role, 
+        ...formData
+      });
 
-    onLoginSuccess(redirectUrl);
+      const { token } = response.data;
+
+      if (token) {
+        login(token); // Updates global state instantly
+      }
+
+      toast.dismiss();
+      toast.success('Login successful! Redirecting...');
+      
+      let redirectUrl = '/';
+      if (role === 'gov') redirectUrl = '/gov';
+      if (role === 'hospital') redirectUrl = '/hospital';
+      if (role === 'worker') redirectUrl = '/worker';
+
+      onLoginSuccess(redirectUrl);
+
+    } catch (error: any) {
+      toast.dismiss();
+      console.error("Login Failed:", error);
+      
+      // --- CUSTOM ERROR MESSAGES ---
+      if (error.response) {
+        if (error.response.status === 404) {
+          toast.error('Account does not exist.');
+        } else if (error.response.status === 400) {
+          toast.error('Invalid credentials. Please try again.');
+        } else {
+          toast.error(error.response.data.message || 'Login failed.');
+        }
+      } else {
+        toast.error('Network error. Could not connect to server.');
+      }
+      // -----------------------------
+
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   
   const renderFormFields = () => {
@@ -60,8 +94,8 @@ export default function LoginForm({ role, onBack, onLoginSuccess }: LoginFormPro
           <>
             <input name="mobileNumber" type="tel" placeholder="Mobile Number" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
             <div className="flex gap-2">
-                <input name="otp" type="text" placeholder="Enter OTP" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
-                <button type="button" className="bg-gray-200 text-gray-800 font-semibold px-4 py-2 rounded-lg hover:bg-gray-300 whitespace-nowrap">Send OTP</button>
+                <input name="otp" type="text" placeholder="Enter OTP" onChange={handleInputChange} className="w-full p-2 border rounded-lg" />
+                <input name="password" type="password" placeholder="Password" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
             </div>
           </>
         );

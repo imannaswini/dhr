@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import Navbar from '@/components/Navbar';
-import { Toaster } from 'react-hot-toast'; // <-- 1. Import Toaster
+import { Toaster } from 'react-hot-toast';
+import Providers from '@/components/Provider';
+import { AuthProvider } from '@/context/AuthContext'; // 1. Import AuthProvider
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -22,11 +24,15 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <Toaster position="top-center" /> {/* <-- 2. Add the Toaster component */}
-        <Navbar />
-        <main className="pt-16">
-            {children}
-        </main>
+        <Providers>
+           <AuthProvider>
+  <Toaster position="top-center" />
+  <Navbar /> {/* Navbar MUST be inside AuthProvider */}
+  <main className="pt-16">
+      {children}
+  </main>
+</AuthProvider>
+        </Providers>
       </body>
     </html>
   );

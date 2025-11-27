@@ -1,245 +1,310 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { User, ShieldHalf, Building2, LogOut, Edit, Mail, Phone, MapPin, X, Camera } from 'lucide-react';
+import { User, ShieldHalf, Building2, LogOut, Mail, Phone, MapPin, Loader2, Users, Trash2, Plus, X, Edit } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'; 
+import api from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 
-// --- TYPE DEFINITIONS ---
-type GovProfile = { role: 'gov'; name: string; email: string; employeeId: string; department: string; };
-type HospitalProfile = { role: 'hospital'; name: string; email: string; hospitalName: string; registrationNumber: string; };
-type WorkerProfile = { role: 'worker'; name: string; mobile: string; id: string; homeState: string; };
-type UserProfile = GovProfile | HospitalProfile | WorkerProfile;
-
-// --- MOCK DATA ---
-const userProfileData: Record<'gov' | 'hospital' | 'worker', UserProfile> = {
-  gov: { role: 'gov', name: 'Dr. Anitha Sharma', email: 'anitha.s@kerala.gov.in', employeeId: 'GOV54321', department: 'Health Service Department' },
-  hospital: { role: 'hospital', name: 'Mr. Rajan Nair', email: 'admin@gh-ernakulam.in', hospitalName: 'General Hospital, Ernakulam', registrationNumber: 'HOS12345' },
-  worker: { role: 'worker', name: 'Ravi Verma', mobile: '9876543210', id: 'MW101', homeState: 'Uttar Pradesh' },
+// --- TYPES ---
+type Staff = {
+  id: string;
+  staffId?: string;
+  name: string;
+  role: string;
+  department: string;
+  qualification: string;
+  contact: string;
+  email: string;
+  address: string;
+  dateOfJoining: string;
+  shiftTiming: string;
+  experience: string;
+  salary: string;
+  emergencyContact: string;
 };
-const loggedInUserRole: 'gov' | 'hospital' | 'worker' = 'worker';
 
+const emptyStaffForm: Staff = {
+    id: '', name: '', role: 'Nurse', department: '', qualification: '', contact: '', 
+    email: '', address: '', dateOfJoining: '', shiftTiming: '', experience: '', salary: '', emergencyContact: ''
+};
 
-// --- MAIN PROFILE PAGE COMPONENT ---
+// --- MAIN COMPONENT ---
 export default function ProfilePage() {
   const router = useRouter();
-  const [profileData, setProfileData] = useState<UserProfile>(userProfileData[loggedInUserRole]);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const { logout } = useAuth();
+  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   
-  const [profilePicture, setProfilePicture] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // --- FETCH REAL PROFILE DATA ---
+  const { data: userData, isLoading, error } = useQuery({
+    queryKey: ['profile'],
+    queryFn: async () => {
+      const res = await api.get('/auth/me');
+      return res.data;
+    },
+    retry: false, 
+  });
+
+  if (error) {
+    router.push('/auth/login');
+    return null;
+  }
 
   const handleLogout = () => {
+    logout();
     toast.success('You have been logged out.');
-    setTimeout(() => {
-      router.push('/');
-    }, 1000);
-  };
-  
-  const handleSaveProfile = (updatedData: UserProfile) => {
-    setProfileData(updatedData);
-    setIsEditModalOpen(false);
-    toast.success('Profile updated successfully!');
+    router.push('/');
   };
 
-  const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase();
+  const getInitials = (name: string) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??';
 
-  const handlePictureSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setSelectedFile(file);
-      setProfilePicture(URL.createObjectURL(file));
-    }
-  };
-
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleSavePicture = async () => {
-    if (!selectedFile) {
-      toast.error("Please select a picture first.");
-      return;
-    }
-    toast.loading("Uploading picture...");
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    toast.dismiss();
-    toast.success("Profile picture updated!");
-    setSelectedFile(null);
-  };
-  
   const renderProfileDetails = () => {
-    switch (profileData.role) {
-      case 'gov':
-        return (
-          <>
-            <ProfileDetail icon={<Mail />} label="Official Email" value={profileData.email} />
-            <ProfileDetail icon={<ShieldHalf />} label="Employee ID" value={profileData.employeeId} />
-            <ProfileDetail icon={<Building2 />} label="Department" value={profileData.department} />
-          </>
-        );
+    if (!userData) return null;
+    const details = userData.details || {};
+
+    switch (userData.role) {
       case 'hospital':
         return (
           <>
-            <ProfileDetail icon={<Mail />} label="Admin Email" value={profileData.email} />
-            <ProfileDetail icon={<Building2 />} label="Hospital Name" value={profileData.hospitalName} />
-            <ProfileDetail icon={<ShieldHalf />} label="Registration No." value={profileData.registrationNumber} />
+            <div className="mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100">
+              <h3 className="font-bold text-blue-900 mb-2">Hospital Details</h3>
+              <ProfileDetail icon={<Building2 />} label="Hospital Name" value={details.hospitalName || userData.name} />
+              <ProfileDetail icon={<ShieldHalf />} label="Registration No." value={details.registrationNumber || 'N/A'} />
+              <ProfileDetail icon={<Mail />} label="Admin Email" value={details.administratorEmail || userData.email} />
+              <ProfileDetail icon={<Phone />} label="Admin Contact" value={details.adminContact || 'N/A'} />
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <button onClick={() => router.push('/hospital')} className="p-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition flex justify-center items-center">
+                    <Building2 className="w-4 h-4 mr-2"/> Go to Dashboard
+                </button>
+                <button onClick={() => setIsStaffModalOpen(true)} className="p-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition flex justify-center items-center">
+                    <Users className="w-4 h-4 mr-2"/> Manage Staff
+                </button>
+            </div>
           </>
         );
       case 'worker':
         return (
           <>
-            <ProfileDetail icon={<Phone />} label="Registered Mobile" value={profileData.mobile} />
-            <ProfileDetail icon={<User />} label="Health ID" value={profileData.id} />
-            <ProfileDetail icon={<MapPin />} label="Home State" value={profileData.homeState} />
+             <div className="mb-6 bg-green-50 p-4 rounded-lg border border-green-100">
+              <h3 className="font-bold text-green-900 mb-2">Worker Details</h3>
+              <ProfileDetail icon={<User />} label="Full Name" value={details.name || userData.name} />
+              <ProfileDetail icon={<Phone />} label="Mobile Number" value={userData.mobile} />
+              <ProfileDetail icon={<ShieldHalf />} label="Aadhaar Number" value={details.aadhaarNumber || 'N/A'} />
+            </div>
+            <button onClick={() => router.push('/worker')} className="w-full p-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition">
+                View Health Card
+            </button>
           </>
         );
+      case 'gov':
+        return (
+          <>
+            <div className="mb-6 bg-purple-50 p-4 rounded-lg border border-purple-100">
+              <h3 className="font-bold text-purple-900 mb-2">Official Details</h3>
+              <ProfileDetail icon={<Mail />} label="Official Email" value={userData.email} />
+              <ProfileDetail icon={<ShieldHalf />} label="Employee ID" value={details.employeeId || 'N/A'} />
+              <ProfileDetail icon={<Building2 />} label="Dept Code" value={details.verificationCode || 'N/A'} />
+            </div>
+            <button onClick={() => router.push('/gov')} className="w-full p-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition">
+                Open Admin Portal
+            </button>
+          </>
+        );
+      default:
+        return <p>Unknown Role</p>;
     }
   };
 
+  if (isLoading) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="w-8 h-8 animate-spin text-green-600" /></div>;
+
   return (
-    <>
-      <div className="bg-gray-100 min-h-screen flex items-center justify-center p-4">
-        <div className="w-full max-w-2xl bg-white rounded-lg shadow-xl p-8">
-          <div className="flex justify-end mb-4">
-            <button onClick={handleLogout} className="flex items-center text-sm text-red-600 hover:text-red-800 font-semibold">
-              <LogOut className="w-4 h-4 mr-1" />
-              Log Out
-            </button>
+    <div className="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl bg-white rounded-lg shadow-xl p-8">
+        <div className="mb-6 border-b pb-4 flex justify-between items-center">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800">My Profile</h1>
+              <p className="text-sm text-gray-500">Manage your account settings</p>
+            </div>
+            {/* Only show log out if not in Navbar, but for safety we keep it accessible */}
+        </div>
+        <div className="flex flex-col items-center">
+          <div className="w-24 h-24 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center mb-4 text-3xl font-bold border-4 border-white shadow-sm">
+               {getInitials(userData?.name)}
           </div>
-          
-          <div className="flex flex-col items-center">
-            <div className="relative">
-              <input type="file" ref={fileInputRef} onChange={handlePictureSelect} accept="image/*" className="hidden" />
-              <div className="w-24 h-24 bg-green-600 text-white rounded-full flex items-center justify-center mb-2 overflow-hidden">
-                {profilePicture ? (
-                  <img src={profilePicture} alt="Profile Preview" className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-3xl font-bold">{getInitials(profileData.name)}</span>
-                )}
-              </div>
-              <button onClick={handleUploadClick} className="absolute bottom-2 right-0 bg-white p-1.5 rounded-full shadow-md hover:bg-gray-100">
-                <Camera className="w-4 h-4 text-gray-700" />
-              </button>
-            </div>
-            {selectedFile && (
-                <button onClick={handleSavePicture} className="text-sm bg-blue-500 text-white font-semibold px-3 py-1 rounded-full hover:bg-blue-600 transition-colors mb-4">
-                    Save Picture
-                </button>
-            )}
-
-            <div className="text-center w-full">
-              <h1 className="text-3xl font-bold text-gray-800">{profileData.name}</h1>
-              <p className="text-gray-500 capitalize">{profileData.role} Account</p>
-              
-              <div className="mt-6 space-y-4 border-t pt-6 text-left">
-                {renderProfileDetails()}
-              </div>
-
-              <div className="mt-8 w-full">
-                <button 
-                  onClick={() => setIsEditModalOpen(true)}
-                  className="flex items-center justify-center w-full bg-green-600 text-white font-semibold px-4 py-3 rounded-lg hover:bg-green-700 transition-colors">
-                  <Edit className="w-5 h-5 mr-2" />
-                  Edit Profile
-                </button>
-              </div>
-            </div>
+          <div className="text-center w-full">
+            <h2 className="text-xl font-bold text-gray-900">{userData?.name}</h2>
+            <p className="text-sm text-gray-500 capitalize mb-6">
+                {userData?.role === 'gov' ? 'Government Official' : userData?.role === 'hospital' ? 'Hospital Administrator' : 'Migrant Worker'}
+            </p>
+            <div className="text-left w-full">{renderProfileDetails()}</div>
           </div>
         </div>
       </div>
-      <EditProfileModal 
-        isOpen={isEditModalOpen} 
-        onClose={() => setIsEditModalOpen(false)}
-        userData={profileData}
-        onSave={handleSaveProfile}
-      />
-    </>
+      {userData?.role === 'hospital' && <ManageStaffModal isOpen={isStaffModalOpen} onClose={() => setIsStaffModalOpen(false)} />}
+    </div>
   );
 }
 
-// --- HELPER COMPONENTS ---
 function ProfileDetail({ icon, label, value }: { icon: React.ReactNode; label: string; value: string; }) {
   return (
-    <div className="flex items-center">
-      <div className="flex-shrink-0 w-8 text-gray-500">{icon}</div>
+    <div className="flex items-center p-3 border-b border-gray-200/50 last:border-0">
+      <div className="flex-shrink-0 w-8 text-gray-400">{icon}</div>
       <div>
-        <p className="text-sm font-medium text-gray-500">{label}</p>
-        <p className="text-md font-semibold text-gray-800">{value}</p>
+        <p className="text-xs font-medium text-gray-500 uppercase">{label}</p>
+        <p className="text-sm font-semibold text-gray-800">{value}</p>
       </div>
     </div>
   );
 }
 
-function EditProfileModal({ isOpen, onClose, userData, onSave }: { isOpen: boolean; onClose: () => void; userData: UserProfile; onSave: (data: UserProfile) => void; }) {
-  const [localData, setLocalData] = useState(userData);
+// --- STAFF MANAGEMENT MODAL ---
+function ManageStaffModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+    const queryClient = useQueryClient();
+    const [view, setView] = useState<'list' | 'form'>('list');
+    const [formData, setFormData] = useState<Staff>(emptyStaffForm);
+    const [isEditing, setIsEditing] = useState(false);
 
-  useEffect(() => {
-    setLocalData(userData);
-  }, [userData]);
-  
-  if (!isOpen) return null;
+    // Fetch Staff
+    const { data: staffList = [], isLoading } = useQuery({
+        queryKey: ['staff'],
+        queryFn: async () => (await api.get('/hospital/staff')).data
+    });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setLocalData(prev => ({ ...prev, [name]: value }));
-  };
+    // Mutations
+    const addMutation = useMutation({
+        mutationFn: (data: Staff) => api.post('/hospital/staff', data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['staff'] });
+            toast.success('Staff added successfully!');
+            setView('list');
+        }
+    });
 
-  const renderEditFields = () => {
-    switch (localData.role) {
-      case 'gov':
-        return (
-          <>
-            <EditField label="Full Name" name="name" value={localData.name} onChange={handleChange} />
-            <EditField label="Official Email" name="email" value={localData.email} onChange={handleChange} />
-          </>
-        );
-      case 'hospital':
-        return (
-          <>
-            <EditField label="Admin Name" name="name" value={localData.name} onChange={handleChange} />
-            <EditField label="Admin Email" name="email" value={localData.email} onChange={handleChange} />
-          </>
-        );
-      case 'worker':
-        return (
-          <>
-            <EditField label="Full Name" name="name" value={localData.name} onChange={handleChange} />
-            <EditField label="Registered Mobile" name="mobile" value={localData.mobile} onChange={handleChange} />
-          </>
-        );
-    }
-  };
+    const updateMutation = useMutation({
+        mutationFn: (data: Staff) => api.put(`/hospital/staff/${data.id}`, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['staff'] });
+            toast.success('Staff updated successfully!');
+            setView('list');
+        }
+    });
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg relative">
-        <button onClick={onClose} className="absolute top-4 right-4"><X className="w-6 h-6 text-gray-500 hover:text-gray-800" /></button>
-        <h2 className="text-2xl font-bold mb-4">Edit Profile</h2>
-        <div className="space-y-4">
-          {renderEditFields()}
+    const deleteMutation = useMutation({
+        mutationFn: (id: string) => api.delete(`/hospital/staff/${id}`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['staff'] });
+            toast.success('Staff deleted.');
+        }
+    });
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (isEditing) {
+            updateMutation.mutate(formData);
+        } else {
+            // Remove 'id' for new creation
+            const { id, ...dataToSend } = formData;
+            addMutation.mutate(dataToSend as Staff);
+        }
+    };
+
+    const handleEdit = (staff: Staff) => {
+        setFormData(staff);
+        setIsEditing(true);
+        setView('form');
+    };
+
+    const handleAddNew = () => {
+        setFormData(emptyStaffForm);
+        setIsEditing(false);
+        setView('form');
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+                <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
+                    <h2 className="text-xl font-bold text-gray-800">
+                        {view === 'list' ? 'Hospital Staff Directory' : (isEditing ? 'Edit Staff Details' : 'Add New Staff')}
+                    </h2>
+                    <button onClick={onClose}><X className="w-6 h-6 text-gray-500 hover:text-gray-800" /></button>
+                </div>
+
+                <div className="p-6 overflow-y-auto flex-grow">
+                    {view === 'list' ? (
+                        <>
+                            <div className="flex justify-end mb-4">
+                                <button onClick={handleAddNew} className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+                                    <Plus className="w-4 h-4 mr-2" /> Add Staff
+                                </button>
+                            </div>
+                            {isLoading ? <div className="text-center py-4">Loading...</div> : (
+                                <div className="grid gap-4">
+                                    {staffList.length === 0 ? <p className="text-center text-gray-500">No staff found.</p> : 
+                                     staffList.map((staff: Staff) => (
+                                        <div key={staff.id} className="border p-4 rounded-lg flex justify-between items-center hover:shadow-md transition bg-white">
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="font-bold text-lg">{staff.name}</h3>
+                                                    <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded border">{staff.staffId}</span>
+                                                </div>
+                                                <p className="text-sm text-blue-600 font-medium">{staff.role}</p>
+                                                <p className="text-xs text-gray-500">{staff.email} • {staff.contact}</p>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => handleEdit(staff)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-full" title="View/Edit">
+                                                    <Edit className="w-4 h-4" />
+                                                </button>
+                                                <button onClick={() => deleteMutation.mutate(staff.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-full" title="Delete">
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="md:col-span-2 bg-blue-50 p-3 rounded text-sm text-blue-800 border border-blue-100 mb-2">
+                                Staff ID will be auto-generated based on the role (e.g. Nurse: CGC123, Doctor: CGC@321)
+                            </div>
+                            
+                            <input placeholder="Full Name" className="p-2 border rounded" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+                            <select className="p-2 border rounded" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} required>
+                                <option>Nurse</option>
+                                <option>Doctor</option>
+                                <option>Lab Technician</option>
+                                <option>Pharmacist</option>
+                                <option>Admin Staff</option>
+                            </select>
+                            <input placeholder="Department" className="p-2 border rounded" value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})} />
+                            <input placeholder="Qualification" className="p-2 border rounded" value={formData.qualification} onChange={e => setFormData({...formData, qualification: e.target.value})} />
+                            <input placeholder="Contact Number" type="tel" className="p-2 border rounded" value={formData.contact} onChange={e => setFormData({...formData, contact: e.target.value})} required />
+                            <input placeholder="Email" type="email" className="p-2 border rounded" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                            <input placeholder="Date of Joining" type="date" className="p-2 border rounded" value={formData.dateOfJoining} onChange={e => setFormData({...formData, dateOfJoining: e.target.value})} />
+                            <input placeholder="Shift Timing (e.g. 9AM - 5PM)" className="p-2 border rounded" value={formData.shiftTiming} onChange={e => setFormData({...formData, shiftTiming: e.target.value})} />
+                            <input placeholder="Experience (e.g. 5 years)" className="p-2 border rounded" value={formData.experience} onChange={e => setFormData({...formData, experience: e.target.value})} />
+                            <input placeholder="Salary" className="p-2 border rounded" value={formData.salary} onChange={e => setFormData({...formData, salary: e.target.value})} />
+                            <input placeholder="Emergency Contact" className="p-2 border rounded" value={formData.emergencyContact} onChange={e => setFormData({...formData, emergencyContact: e.target.value})} />
+                            <textarea placeholder="Address" className="md:col-span-2 p-2 border rounded h-20" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
+
+                            <div className="md:col-span-2 flex justify-end gap-3 mt-4 pt-4 border-t">
+                                <button type="button" onClick={() => setView('list')} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
+                                <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-semibold">
+                                    {isEditing ? 'Update Staff' : 'Save Staff'}
+                                </button>
+                            </div>
+                        </form>
+                    )}
+                </div>
+            </div>
         </div>
-        <div className="flex justify-end space-x-4 mt-6 pt-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
-          <button onClick={() => onSave(localData)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Save Changes</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EditField({ label, name, value, onChange }: { label: string; name: string; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
-  return (
-    <div>
-      <label className="text-sm font-medium text-gray-600">{label}</label>
-      <input 
-        type="text"
-        name={name}
-        value={value}
-        onChange={onChange}
-        className="w-full p-2 border rounded-lg mt-1"
-      />
-    </div>
-  );
+    );
 }

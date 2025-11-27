@@ -3,17 +3,16 @@
 import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { ArrowLeft } from 'lucide-react';
+import api from '@/lib/api';
 
-// The props now include an onSignUpSuccess function
 interface SignUpFormProps {
   role: 'gov' | 'hospital' | 'worker';
   onBack: () => void;
   onSignUpSuccess: (redirectUrl: string) => void; 
 }
 
-// --- MAIN FORM COMPONENT ---
 export default function SignUpForm({ role, onBack, onSignUpSuccess }: SignUpFormProps) {
-  const [formData, setFormData] = useState({});
+  const [formData, setFormData] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -25,25 +24,31 @@ export default function SignUpForm({ role, onBack, onSignUpSuccess }: SignUpForm
     e.preventDefault();
     setIsSubmitting(true);
     toast.loading('Submitting registration...');
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    console.log("Form Submitted for role:", role, "with data:", formData);
-    toast.dismiss();
-    toast.success('Registration successful! Redirecting...');
-    
-    // Determine the correct dashboard URL based on the role
-    let redirectUrl = '/'; // Default fallback
-    if (role === 'gov') redirectUrl = '/gov';
-    if (role === 'hospital') redirectUrl = '/hospital';
-    if (role === 'worker') redirectUrl = '/worker';
 
-    // Call the success function with the URL
-    onSignUpSuccess(redirectUrl);
+    try {
+      const response = await api.post('/auth/signup', {
+        role,
+        ...formData
+      });
+
+      toast.dismiss();
+      toast.success(response.data.message || 'Registration successful! Please log in.');
+      
+      // Redirect to Login Page after signup
+      onSignUpSuccess('/auth/login');
+
+    } catch (error: any) {
+      toast.dismiss();
+      console.error("Signup Error:", error);
+      
+      // Display specific error from backend (e.g., "User already exists")
+      const errorMessage = error.response?.data?.message || 'Registration failed. Please check your connection.';
+      toast.error(errorMessage);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   
-  // Render the correct form fields based on the role
   const renderFormFields = () => {
     switch (role) {
       case 'gov':
@@ -52,6 +57,7 @@ export default function SignUpForm({ role, onBack, onSignUpSuccess }: SignUpForm
             <input name="officialEmail" type="email" placeholder="Official Email (@kerala.gov.in)" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
             <input name="employeeId" type="text" placeholder="Employee ID" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
             <input name="verificationCode" type="text" placeholder="Department Verification Code" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
+            <input name="password" type="password" placeholder="Set Password" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
           </>
         );
       case 'hospital':
@@ -59,7 +65,9 @@ export default function SignUpForm({ role, onBack, onSignUpSuccess }: SignUpForm
           <>
             <input name="hospitalName" type="text" placeholder="Hospital / Center Name" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
             <input name="registrationNumber" type="text" placeholder="Hospital Registration Number" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
+            <input name="administratorEmail" type="email" placeholder="Administrator Email" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
             <input name="adminContact" type="tel" placeholder="Administrator Contact Number" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
+            <input name="password" type="password" placeholder="Set Password" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
           </>
         );
       case 'worker':
@@ -68,6 +76,7 @@ export default function SignUpForm({ role, onBack, onSignUpSuccess }: SignUpForm
             <input name="name" type="text" placeholder="Full Name" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
             <input name="mobileNumber" type="tel" placeholder="Mobile Number (for OTP)" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
             <input name="aadhaarNumber" type="text" placeholder="Aadhaar Number" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
+            <input name="password" type="password" placeholder="Set Password" onChange={handleInputChange} className="w-full p-2 border rounded-lg" required />
           </>
         );
       default:

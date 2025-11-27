@@ -1,27 +1,33 @@
 'use client';
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { UserPlus, ListOrdered, Bell, Search, Download, Edit, Printer, X, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 import { toast, Toaster } from 'react-hot-toast';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'; 
+import api from '@/lib/api'; 
 
-// --- EXPANDED MOCK DATA ---
-const initialRegistrations = [
-    { id: 'MW101', name: 'Ravi Verma', registeredOn: '2025-09-17', dob: '1990-05-15', gender: 'Male', contact: '9876543210', homeState: 'Uttar Pradesh', idType: 'Aadhaar', idNumber: '1234 5678 9012' },
-    { id: 'MW102', name: 'Sunita Devi', registeredOn: '2025-09-17', dob: '1992-11-22', gender: 'Female', contact: '9876512345', homeState: 'Bihar', idType: 'Aadhaar', idNumber: '2345 6789 0123' },
-    { id: 'MW103', name: 'Amit Singh', registeredOn: '2025-09-16', dob: '1988-03-01', gender: 'Male', contact: '9876598765', homeState: 'West Bengal', idType: 'Voter ID', idNumber: 'WB1234567' },
-    { id: 'MW104', name: 'Priya Sharma', registeredOn: '2025-09-16', dob: '1995-07-04', gender: 'Female', contact: '9876567890', homeState: 'Odisha', idType: 'Aadhaar', idNumber: '4567 8901 2345' },
-    { id: 'MW105', name: 'Manoj Kumar', registeredOn: '2025-09-15', dob: '1991-02-18', gender: 'Male', contact: '9123456789', homeState: 'Jharkhand', idType: 'Aadhaar', idNumber: '5678 9012 3456' },
-    { id: 'MW106', name: 'Geeta Kumari', registeredOn: '2025-09-15', dob: '1994-09-12', gender: 'Female', contact: '9234567890', homeState: 'Bihar', idType: 'Aadhaar', idNumber: '6789 0123 4567' },
-    { id: 'MW107', name: 'Suresh Yadav', registeredOn: '2025-09-14', dob: '1989-06-25', gender: 'Male', contact: '9345678901', homeState: 'Uttar Pradesh', idType: 'Voter ID', idNumber: 'UP7654321' },
-];
+// --- TYPES ---
+type Worker = {
+  id: string;
+  workerId: string; // Add the new custom ID field
+  name: string;
+  registeredOn: string;
+  dob: string;
+  gender: string;
+  contact: string;
+  homeState: string;
+  idType: string;
+  idNumber: string;
+  hospitalName: string; // Add hospital name field
+  [key: string]: any; 
+};
 
-const healthAlerts = [
-  { id: 1, title: 'High Fever Cluster Reported in Ernakulam', date: '2025-09-16', severity: 'Urgent', content: 'All centers are advised to screen for high fever and report suspected cases immediately...' },
-  { id: 2, title: 'Vaccination Drive Update', date: '2025-09-15', severity: 'Informational', content: 'New shipment of vaccines has arrived. Please update your inventory and continue the vaccination drive.' },
-];
-
-const defaultFormState = { name: '', dob: '', gender: 'Male', contact: '', homeState: '', idType: 'Aadhaar', idNumber: '' };
-type Worker = typeof initialRegistrations[0];
+type Alert = {
+  id: number;
+  title: string;
+  date: string;
+  severity: 'Urgent' | 'Informational' | 'Critical';
+  content: string;
+};
 
 type ValidationData = {
   name: string;
@@ -31,14 +37,17 @@ type ValidationData = {
   [key: string]: string | number | undefined;
 };
 
+const defaultFormState = { name: '', dob: '', gender: 'Male', contact: '', homeState: '', idType: 'Aadhaar', idNumber: '' };
+
 export default function HospitalDashboardPage() {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('recent');
-  const [allRegistrations, setAllRegistrations] = useState<Worker[]>(initialRegistrations);
   const [formData, setFormData] = useState(defaultFormState);
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  
+  // Modal States
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null);
   const [deletingWorker, setDeletingWorker] = useState<Worker | null>(null);
@@ -50,6 +59,84 @@ export default function HospitalDashboardPage() {
 
   const ITEMS_PER_PAGE = 5;
 
+  // --- 1. QUERIES (Fetch Data) ---
+
+  // Fetch Logged-in Hospital Profile
+  const { data: hospitalProfile } = useQuery({
+    queryKey: ['hospitalProfile'],
+    queryFn: async () => {
+      const response = await api.get('/auth/me');
+      return response.data;
+    },
+  });
+
+  // Fetch Workers List
+  const { data: allRegistrations = [], isLoading: isLoadingWorkers } = useQuery({
+    queryKey: ['workers'],
+    queryFn: async () => {
+      const response = await api.get('/hospital/workers');
+      return response.data;
+    },
+  });
+
+  // Fetch Health Alerts
+  const { data: healthAlerts = [] } = useQuery({
+    queryKey: ['alerts'],
+    queryFn: async () => {
+      const response = await api.get('/hospital/alerts');
+      return response.data;
+    },
+  });
+
+  // --- 2. MUTATIONS (Modify Data) ---
+
+  const registerMutation = useMutation({
+    mutationFn: async (newWorkerData: any) => {
+      return await api.post('/hospital/workers', newWorkerData);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['workers'] }); 
+      toast.success(`${formData.name} successfully registered!`);
+      setNewlyRegisteredWorker(data.data); 
+      setIsIdCardModalOpen(true);
+      setFormData(defaultFormState);
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Registration failed.');
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (updatedData: Worker) => {
+      return await api.put(`/hospital/workers/${updatedData.id}`, updatedData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workers'] });
+      setIsEditModalOpen(false);
+      toast.success('Worker details updated successfully!');
+    },
+    onError: () => {
+      toast.error('Failed to update worker.');
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (workerId: string) => {
+      return await api.delete(`/hospital/workers/${workerId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workers'] });
+      setIsDeleteModalOpen(false);
+      toast.success('Record deleted successfully.');
+      setDeletingWorker(null);
+    },
+    onError: () => {
+      toast.error('Failed to delete record.');
+    }
+  });
+
+  // --- HELPER FUNCTIONS ---
+
   const validateForm = (data: ValidationData) => {
     const errors: { [key: string]: string } = {};
     if (!data.name.trim()) errors.name = "Name is required.";
@@ -60,9 +147,9 @@ export default function HospitalDashboardPage() {
   };
 
   const filteredWorkers = useMemo(() =>
-    allRegistrations.filter(worker =>
+    allRegistrations.filter((worker: Worker) =>
       worker.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      worker.id.toLowerCase().includes(searchTerm.toLowerCase())
+      (worker.workerId && worker.workerId.toLowerCase().includes(searchTerm.toLowerCase()))
     ), [allRegistrations, searchTerm]);
 
   const paginatedWorkers = useMemo(() =>
@@ -75,7 +162,7 @@ export default function HospitalDashboardPage() {
     if (formErrors[name]) setFormErrors(prev => ({ ...prev, [name]: '' }));
   };
 
-  const handleRegisterSubmit = async (e: React.FormEvent) => {
+  const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const errors = validateForm(formData);
     setFormErrors(errors);
@@ -83,26 +170,20 @@ export default function HospitalDashboardPage() {
       toast.error('Please fix the errors in the form.');
       return;
     }
-    setIsSubmitting(true);
-    toast.loading('Registering new worker...');
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    const newWorker: Worker = {
-      id: `MW${String(Math.floor(Math.random() * 900) + 100)}`,
-      registeredOn: new Date().toISOString().split('T')[0],
-      ...formData
+    
+    // Send hospital name to backend so it can generate initials
+    const payload = {
+        ...formData,
+        registeredOn: new Date().toISOString().split('T')[0],
+        hospitalName: hospitalProfile?.name || 'Unknown Hospital'
     };
-    setAllRegistrations([newWorker, ...allRegistrations]);
-    setNewlyRegisteredWorker(newWorker);
-    setIsIdCardModalOpen(true);
-    toast.dismiss();
-    toast.success(`${formData.name} successfully registered!`);
-    setFormData(defaultFormState);
-    setIsSubmitting(false);
+
+    registerMutation.mutate(payload);
   };
 
   const handleExportCSV = () => {
     const headers = "Worker ID,Name,Registered On,Date of Birth,Gender,Contact,Home State,ID Type,ID Number\n";
-    const csvContent = filteredWorkers.map(w => `${w.id},${w.name},${w.registeredOn},${w.dob},${w.gender},${w.contact},${w.homeState},${w.idType},${w.idNumber}`).join("\n");
+    const csvContent = filteredWorkers.map((w: Worker) => `${w.workerId || w.id},${w.name},${w.registeredOn},${w.dob},${w.gender},${w.contact},${w.homeState},${w.idType},${w.idNumber}`).join("\n");
     const blob = new Blob([headers + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     if (link.download !== undefined) {
@@ -128,9 +209,7 @@ export default function HospitalDashboardPage() {
   };
 
   const handleUpdateWorker = (updatedWorker: Worker) => {
-    setAllRegistrations(prev => prev.map(w => w.id === updatedWorker.id ? updatedWorker : w));
-    setIsEditModalOpen(false);
-    toast.success('Worker details updated successfully!');
+    updateMutation.mutate(updatedWorker);
   };
 
   const handleOpenDeleteModal = (worker: Worker) => {
@@ -140,10 +219,7 @@ export default function HospitalDashboardPage() {
 
   const handleConfirmDelete = () => {
     if (!deletingWorker) return;
-    setAllRegistrations(prev => prev.filter(w => w.id !== deletingWorker.id));
-    setIsDeleteModalOpen(false);
-    toast.success(`Record for ${deletingWorker.name} has been deleted.`);
-    setDeletingWorker(null);
+    deleteMutation.mutate(deletingWorker.id);
   };
 
   const renderTabContent = () => {
@@ -186,10 +262,21 @@ export default function HospitalDashboardPage() {
                 </div>
               </div>
             </div>
-            <div className="flex justify-end pt-4"><button type="submit" disabled={isSubmitting} className="flex items-center bg-green-600 text-white font-semibold px-6 py-3 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60"><UserPlus className="w-5 h-5 mr-2" />{isSubmitting ? 'Submitting...' : 'Register Worker'}</button></div>
+            <div className="flex justify-end pt-4">
+              <button 
+                type="submit" 
+                disabled={registerMutation.isPending} 
+                className="flex items-center bg-green-600 text-white font-semibold px-6 py-3 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60"
+              >
+                <UserPlus className="w-5 h-5 mr-2" />
+                {registerMutation.isPending ? 'Submitting...' : 'Register Worker'}
+              </button>
+            </div>
           </form>
         );
       case 'recent':
+        if (isLoadingWorkers) return <div className="p-8 text-center text-gray-500">Loading workers...</div>;
+        
         return (
           <div className="p-4">
             <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
@@ -203,9 +290,10 @@ export default function HospitalDashboardPage() {
               <table className="w-full text-left">
                 <thead><tr className="bg-gray-100"><th className="p-3 font-semibold">Worker ID</th><th className="p-3 font-semibold">Name</th><th className="p-3 font-semibold">Registered On</th><th className="p-3 font-semibold">Contact</th><th className="p-3 font-semibold">Actions</th></tr></thead>
                 <tbody>
-                  {paginatedWorkers.map((worker) => (
+                  {paginatedWorkers.map((worker: Worker) => (
                     <tr key={worker.id} className="border-b hover:bg-gray-50">
-                      <td className="p-3 font-medium">{worker.id}</td>
+                      {/* Display Custom ID if available, else fallback to system ID */}
+                      <td className="p-3 font-medium text-blue-700">{worker.workerId || worker.id}</td>
                       <td className="p-3">{worker.name}</td>
                       <td className="p-3">{worker.registeredOn}</td>
                       <td className="p-3">{worker.contact}</td>
@@ -227,7 +315,8 @@ export default function HospitalDashboardPage() {
       case 'alerts':
         return (
           <div className="p-4 space-y-4">
-            {healthAlerts.map(alert => (
+            {healthAlerts.length === 0 && <p className="text-gray-500">No active alerts.</p>}
+            {healthAlerts.map((alert: Alert) => (
               <div key={alert.id} className={`border-l-4 p-4 rounded-r-lg ${alert.severity === 'Urgent' ? 'border-red-500 bg-red-50' : 'border-blue-500 bg-blue-50'}`}>
                 <div className="flex justify-between items-center"><h4 className="font-bold text-lg">{alert.title}</h4><span className="text-sm text-gray-600">{alert.date}</span></div>
                 <p className="mt-2 text-gray-700">{alert.content}</p>
@@ -244,12 +333,14 @@ export default function HospitalDashboardPage() {
       <div className="container mx-auto">
         <header className="mb-8">
           <h1 className="text-3xl font-bold text-gray-800">Hospital Portal</h1>
-          <p className="text-gray-500 mt-1">Welcome, General Hospital, Ernakulam | {new Date().toDateString()}</p>
+          <p className="text-gray-500 mt-1">
+            Welcome, {hospitalProfile?.name || 'Loading...'} | {new Date().toDateString()}
+          </p>
         </header>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <StatCard icon={<UserPlus className="w-8 h-8 text-green-500" />} title="Today's Registrations" value={allRegistrations.filter(w => w.registeredOn === new Date().toISOString().split('T')[0]).length.toString()} />
-          <StatCard icon={<ListOrdered className="w-8 h-8 text-blue-500" />} title="Total Registrations (This Facility)" value={allRegistrations.length.toString()} />
-          <StatCard icon={<Bell className="w-8 h-8 text-red-500" />} title="Active Alerts" value={healthAlerts.filter(a => a.severity === 'Urgent').length.toString()} />
+          <StatCard icon={<UserPlus className="w-8 h-8 text-green-500" />} title="Today's Registrations" value={allRegistrations.filter((w: Worker) => w.registeredOn === new Date().toISOString().split('T')[0]).length.toString()} />
+          <StatCard icon={<ListOrdered className="w-8 h-8 text-blue-500" />} title="Total Registrations" value={allRegistrations.length.toString()} />
+          <StatCard icon={<Bell className="w-8 h-8 text-red-500" />} title="Active Alerts" value={healthAlerts.filter((a: Alert) => a.severity === 'Urgent').length.toString()} />
         </div>
         <div className="bg-white rounded-lg shadow-md">
           <div className="border-b"><nav className="flex space-x-2 p-2"><TabButton icon={<ListOrdered />} label="Registrations" isActive={activeTab === 'recent'} onClick={() => setActiveTab('recent')} /><TabButton icon={<UserPlus />} label="New Registration" isActive={activeTab === 'register'} onClick={() => setActiveTab('register')} /><TabButton icon={<Bell />} label="Health Alerts" isActive={activeTab === 'alerts'} onClick={() => setActiveTab('alerts')} /></nav></div>
@@ -288,13 +379,14 @@ const ProfileModal = ({ isOpen, onClose, worker }: { isOpen: boolean; onClose: (
         <h2 className="text-2xl font-bold mb-4 border-b pb-2">Worker Profile</h2>
         <div className="space-y-3">
           <p><strong>Name:</strong> {worker.name}</p>
-          <p><strong>Worker ID:</strong> {worker.id}</p>
+          <p><strong>Worker ID:</strong> {worker.workerId || worker.id}</p>
           <p><strong>Date of Birth:</strong> {worker.dob}</p>
           <p><strong>Gender:</strong> {worker.gender}</p>
           <p><strong>Contact:</strong> {worker.contact}</p>
           <p><strong>Home State:</strong> {worker.homeState}</p>
           <p><strong>ID Proof:</strong> {worker.idType} - {worker.idNumber}</p>
           <p><strong>Registered On:</strong> {worker.registeredOn}</p>
+          <p><strong>Registered At:</strong> {worker.hospitalName || 'Unknown'}</p>
         </div>
       </div>
     </div>
@@ -311,9 +403,9 @@ const IdCardModal = ({ isOpen, onClose, worker }: { isOpen: boolean; onClose: ()
           <h2 className="text-2xl font-bold mb-4 text-center">Migrant Worker Health ID</h2>
           <div className="border-2 border-gray-300 p-4 rounded-lg space-y-2">
             <p><strong>Name:</strong> {worker.name}</p>
-            <p><strong>Worker ID:</strong> {worker.id}</p>
+            <p><strong>Worker ID:</strong> {worker.workerId || worker.id}</p>
             <p><strong>Date of Birth:</strong> {worker.dob}</p>
-            <p><strong>Registered at:</strong> General Hospital, Ernakulam</p>
+            <p><strong>Registered at:</strong> {worker.hospitalName || 'Unknown'}</p>
             <p className="text-xs text-gray-500 pt-2">This is a temporary ID. Please keep it safe.</p>
           </div>
         </div>
@@ -334,6 +426,7 @@ const IdCardModal = ({ isOpen, onClose, worker }: { isOpen: boolean; onClose: ()
   );
 };
 
+// ... (EditModal and DeleteModal remain the same)
 const EditModal = ({ isOpen, onClose, worker, onSave, validateForm }: { isOpen: boolean; onClose: () => void; worker: Worker | null; onSave: (worker: Worker) => void; validateForm: (data: ValidationData) => Record<string, string>; }) => {
     const [localData, setLocalData] = useState<Worker | null>(null);
     const [errors, setErrors] = useState<Record<string, string>>({});
